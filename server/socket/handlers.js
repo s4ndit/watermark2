@@ -1,28 +1,52 @@
 const { getJobStatus: getImageJobStatus } = require('../services/imageProcessor');
 const { getJobStatus: getVideoJobStatus } = require('../services/videoProcessor');
-
-let socketInstance = null;
+const { initializeBroadcaster, getSocketInstance } = require('../services/socketBroadcaster');
 
 function initializeSocketHandlers(io) {
-    socketInstance = io;
+    // Initialize the broadcaster with the socket instance
+    initializeBroadcaster(io);
     
     io.on('connection', (socket) => {
         console.log(`🔗 Client verbunden: ${socket.id}`);
         
         // Job-Status abonnieren
-        socket.on('subscribe-job', (jobId) => {
-            console.log(`📊 Client ${socket.id} abonniert Job: ${jobId}`);
+        socket.on('subscribe-job', (data) => {
+            let jobId, jobType;
+            
+            // Handle both old format (string) and new format (object)
+            if (typeof data === 'string') {
+                jobId = data;
+                jobType = null;
+            } else if (typeof data === 'object' && data.jobId) {
+                jobId = data.jobId;
+                jobType = data.jobType || null;
+            } else {
+                console.error('Invalid job subscription data:', data);
+                return;
+            }
+            
+            console.log(`📊 Client ${socket.id} abonniert Job: ${jobId}${jobType ? ` (${jobType})` : ''}`);
             socket.join(`job-${jobId}`);
             
             // Aktuellen Status senden, falls vorhanden
-            const currentStatus = getCurrentJobStatus(jobId);
+            const currentStatus = getCurrentJobStatus(jobId, jobType);
             if (currentStatus) {
-                // Send current status to the subscribing client
-                socket.emit('job-status', {
-                    jobId,
-                    ...currentStatus,
-                    timestamp: new Date().toISOString()
-                });
+                // Handle collision case
+                if (currentStatus.collision) {
+                    console.warn(`Job ID collision for ${jobId}, sending image processor status`);
+                    socket.emit('job-status', {
+                        jobId,
+                        ...currentStatus,
+                        timestamp: new Date().toISOString()
+                    });
+                } else {
+                    // Send current status to the subscribing client
+                    socket.emit('job-status', {
+                        jobId,
+                        ...currentStatus,
+                        timestamp: new Date().toISOString()
+                    });
+                }
                 
                 // Also send specific status event based on current state
                 if (currentStatus.status === 'processing') {
@@ -30,6 +54,7 @@ function initializeSocketHandlers(io) {
                         jobId,
                         progress: currentStatus.progress,
                         message: currentStatus.message,
+                        processorType: currentStatus.processorType,
                         timestamp: new Date().toISOString()
                     });
                 } else if (currentStatus.status === 'completed') {
@@ -37,6 +62,7 @@ function initializeSocketHandlers(io) {
                         jobId,
                         outputFile: currentStatus.outputFile,
                         message: currentStatus.message,
+                        processorType: currentStatus.processorType,
                         timestamp: new Date().toISOString()
                     });
                 } else if (currentStatus.status === 'error') {
@@ -44,6 +70,7 @@ function initializeSocketHandlers(io) {
                         jobId,
                         error: currentStatus.error,
                         message: currentStatus.message,
+                        processorType: currentStatus.processorType,
                         timestamp: new Date().toISOString()
                     });
                 }
@@ -83,58 +110,49 @@ function initializeSocketHandlers(io) {
     console.log('⚡ Socket.io-Handler initialisiert');
 }
 
-function getSocketInstance() {
-    return socketInstance;
-}
-
 // Helper function to get current job status from processor services
-function getCurrentJobStatus(jobId) {
-    // Check image processor first
-    let status = getImageJobStatus(jobId);
-    if (status) {
-        return status;
+function getCurrentJobStatus(jobId, jobType = null) {
+    // If job type is specified, check only that processor
+    if (jobType === 'image') {
+        return getImageJobStatus(jobId);
+    } else if (jobType === 'video') {
+        return getVideoJobStatus(jobId);
     }
     
-    // Check video processor if not found in image processor
-    status = getVideoJobStatus(jobId);
-    if (status) {
-        return status;
+    // If no job type specified, check both processors
+    const imageStatus = getImageJobStatus(jobId);
+    const videoStatus = getVideoJobStatus(jobId);
+    
+    // If both processors have the same job ID (edge case), return both with type info
+    if (imageStatus && videoStatus) {
+        console.warn(`Job ID collision detected for jobId: ${jobId}`);
+        return {
+            ...imageStatus,
+            processorType: 'image',
+            collision: true,
+            alternativeStatus: {
+                ...videoStatus,
+                processorType: 'video'
+            }
+        };
+    }
+    
+    // Return status from whichever processor has the job
+    if (imageStatus) {
+        return {
+            ...imageStatus,
+            processorType: 'image'
+        };
+    }
+    
+    if (videoStatus) {
+        return {
+            ...videoStatus,
+            processorType: 'video'
+        };
     }
     
     return null;
-}
-
-function broadcastJobProgress(jobId, progress, message) {
-    if (socketInstance) {
-        socketInstance.to(`job-${jobId}`).emit('job-progress', {
-            jobId,
-            progress,
-            message,
-            timestamp: new Date().toISOString()
-        });
-    }
-}
-
-function broadcastJobComplete(jobId, outputFile, message) {
-    if (socketInstance) {
-        socketInstance.to(`job-${jobId}`).emit('job-complete', {
-            jobId,
-            outputFile,
-            message,
-            timestamp: new Date().toISOString()
-        });
-    }
-}
-
-function broadcastJobError(jobId, error, message) {
-    if (socketInstance) {
-        socketInstance.to(`job-${jobId}`).emit('job-error', {
-            jobId,
-            error,
-            message,
-            timestamp: new Date().toISOString()
-        });
-    }
 }
 
 function cleanupOldJobs() {
@@ -143,28 +161,9 @@ function cleanupOldJobs() {
     console.log('🧹 Job cleanup is now handled by individual processor services');
 }
 
-// System-Statistiken senden
-function broadcastSystemStats() {
-    if (socketInstance) {
-        const stats = {
-            uptime: process.uptime(),
-            memoryUsage: process.memoryUsage(),
-            activeJobs: 0, // Active jobs are now tracked internally by processor services
-            timestamp: new Date().toISOString()
-        };
-        
-        socketInstance.emit('system-stats', stats);
-    }
-}
-
-// Periodische System-Statistiken
-setInterval(broadcastSystemStats, 30000); // Alle 30 Sekunden
-
 module.exports = {
     initializeSocketHandlers,
     getSocketInstance,
-    broadcastJobProgress,
-    broadcastJobComplete,
-    broadcastJobError,
+    getCurrentJobStatus,
     cleanupOldJobs
 }; 
