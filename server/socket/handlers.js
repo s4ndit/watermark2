@@ -1,10 +1,10 @@
 const { getJobStatus: getImageJobStatus } = require('../services/imageProcessor');
 const { getJobStatus: getVideoJobStatus } = require('../services/videoProcessor');
-
-let socketInstance = null;
+const { initializeBroadcaster, getSocketInstance } = require('../services/socketBroadcaster');
 
 function initializeSocketHandlers(io) {
-    socketInstance = io;
+    // Initialize the broadcaster with the socket instance
+    initializeBroadcaster(io);
     
     io.on('connection', (socket) => {
         console.log(`🔗 Client verbunden: ${socket.id}`);
@@ -110,10 +110,6 @@ function initializeSocketHandlers(io) {
     console.log('⚡ Socket.io-Handler initialisiert');
 }
 
-function getSocketInstance() {
-    return socketInstance;
-}
-
 // Helper function to get current job status from processor services
 function getCurrentJobStatus(jobId, jobType = null) {
     // If job type is specified, check only that processor
@@ -159,71 +155,15 @@ function getCurrentJobStatus(jobId, jobType = null) {
     return null;
 }
 
-function broadcastJobProgress(jobId, progress, message, processorType = null) {
-    if (socketInstance) {
-        socketInstance.to(`job-${jobId}`).emit('job-progress', {
-            jobId,
-            progress,
-            message,
-            processorType,
-            timestamp: new Date().toISOString()
-        });
-    }
-}
-
-function broadcastJobComplete(jobId, outputFile, message, processorType = null) {
-    if (socketInstance) {
-        socketInstance.to(`job-${jobId}`).emit('job-complete', {
-            jobId,
-            outputFile,
-            message,
-            processorType,
-            timestamp: new Date().toISOString()
-        });
-    }
-}
-
-function broadcastJobError(jobId, error, message, processorType = null) {
-    if (socketInstance) {
-        socketInstance.to(`job-${jobId}`).emit('job-error', {
-            jobId,
-            error,
-            message,
-            processorType,
-            timestamp: new Date().toISOString()
-        });
-    }
-}
-
 function cleanupOldJobs() {
     // Job cleanup is now handled internally by the processor services
     // This function remains for backward compatibility but is no longer needed
     console.log('🧹 Job cleanup is now handled by individual processor services');
 }
 
-// System-Statistiken senden
-function broadcastSystemStats() {
-    if (socketInstance) {
-        const stats = {
-            uptime: process.uptime(),
-            memoryUsage: process.memoryUsage(),
-            activeJobs: 0, // Active jobs are now tracked internally by processor services
-            timestamp: new Date().toISOString()
-        };
-        
-        socketInstance.emit('system-stats', stats);
-    }
-}
-
-// Periodische System-Statistiken
-setInterval(broadcastSystemStats, 30000); // Alle 30 Sekunden
-
 module.exports = {
     initializeSocketHandlers,
     getSocketInstance,
     getCurrentJobStatus,
-    broadcastJobProgress,
-    broadcastJobComplete,
-    broadcastJobError,
     cleanupOldJobs
 }; 

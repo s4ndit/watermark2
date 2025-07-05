@@ -1,7 +1,7 @@
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs-extra');
-const { broadcastJobProgress, broadcastJobComplete, broadcastJobError } = require('../socket/handlers');
+const { broadcastJobProgress, broadcastJobComplete, broadcastJobError } = require('./socketBroadcaster');
 
 // Job-Status-Speicher mit automatischer Bereinigung
 const jobStatuses = new Map();
