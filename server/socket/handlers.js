@@ -161,6 +161,24 @@ function cleanupOldJobs() {
     console.log('🧹 Job cleanup is now handled by individual processor services');
 }
 
+// System-Statistiken senden
+function broadcastSystemStats() {
+    const socketInstance = getSocketInstance();
+    if (socketInstance) {
+        const stats = {
+            uptime: process.uptime(),
+            memoryUsage: process.memoryUsage(),
+            activeJobs: 0, // Active jobs are now tracked internally by processor services
+            timestamp: new Date().toISOString()
+        };
+        
+        socketInstance.emit('system-stats', stats);
+    }
+}
+
+// Periodische System-Statistiken
+setInterval(broadcastSystemStats, 30000); // Alle 30 Sekunden
+
 module.exports = {
     initializeSocketHandlers,
     getSocketInstance,
