@@ -2,7 +2,7 @@ const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
-const { broadcastJobProgress, broadcastJobComplete, broadcastJobError } = require('../socket/handlers');
+const { broadcastJobProgress, broadcastJobComplete, broadcastJobError } = require('./socketBroadcaster');
 
 // Job-Status-Speicher mit automatischer Bereinigung
 const jobStatuses = new Map();
