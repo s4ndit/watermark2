@@ -107,6 +107,9 @@ function initializeSocketHandlers(io) {
         cleanupOldJobs();
     }, 60000); // Alle 60 Sekunden
 
+    // Periodische System-Statistiken - now started after socket initialization
+    setInterval(broadcastSystemStats, 30000); // Alle 30 Sekunden
+
     console.log('⚡ Socket.io-Handler initialisiert');
 }
 
@@ -175,9 +178,6 @@ function broadcastSystemStats() {
         socketInstance.emit('system-stats', stats);
     }
 }
-
-// Periodische System-Statistiken
-setInterval(broadcastSystemStats, 30000); // Alle 30 Sekunden
 
 module.exports = {
     initializeSocketHandlers,
