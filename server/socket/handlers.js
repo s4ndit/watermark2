@@ -12,12 +12,8 @@ function initializeSocketHandlers(io) {
             socket.join(`job-${jobId}`);
             
             // Aktuellen Status senden, falls vorhanden
-            if (global.jobStatuses && global.jobStatuses[jobId]) {
-                socket.emit('job-status', {
-                    jobId,
-                    ...global.jobStatuses[jobId]
-                });
-            }
+            // Note: Job status is now handled internally by the processor services
+            // This will be handled by the individual services when they emit status updates
         });
 
         // Job-Status abmelden
@@ -91,20 +87,9 @@ function broadcastJobError(jobId, error, message) {
 }
 
 function cleanupOldJobs() {
-    if (!global.jobStatuses) return;
-    
-    const now = Date.now();
-    const maxAge = 24 * 60 * 60 * 1000; // 24 Stunden
-    
-    Object.keys(global.jobStatuses).forEach(jobId => {
-        const job = global.jobStatuses[jobId];
-        const jobTime = job.endTime || job.startTime || now;
-        
-        if (now - jobTime > maxAge) {
-            console.log(`🧹 Lösche alten Job: ${jobId}`);
-            delete global.jobStatuses[jobId];
-        }
-    });
+    // Job cleanup is now handled internally by the processor services
+    // This function remains for backward compatibility but is no longer needed
+    console.log('🧹 Job cleanup is now handled by individual processor services');
 }
 
 // System-Statistiken senden
@@ -113,7 +98,7 @@ function broadcastSystemStats() {
         const stats = {
             uptime: process.uptime(),
             memoryUsage: process.memoryUsage(),
-            activeJobs: global.jobStatuses ? Object.keys(global.jobStatuses).length : 0,
+            activeJobs: 0, // Active jobs are now tracked internally by processor services
             timestamp: new Date().toISOString()
         };
         

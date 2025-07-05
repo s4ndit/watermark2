@@ -4,20 +4,36 @@ const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { getSocketInstance } = require('../socket/handlers');
 
-// Globale Job-Status-Speicher
-global.jobStatuses = global.jobStatuses || {};
+// Job-Status-Speicher mit automatischer Bereinigung
+const jobStatuses = new Map();
+
+// Aufräumfunktion für abgelaufene Jobs
+function cleanupExpiredJobs() {
+    const now = Date.now();
+    const maxAge = 2 * 60 * 60 * 1000; // 2 Stunden
+    
+    for (const [jobId, job] of jobStatuses.entries()) {
+        const jobTime = job.endTime || job.startTime || now;
+        if (now - jobTime > maxAge) {
+            jobStatuses.delete(jobId);
+        }
+    }
+}
+
+// Periodische Bereinigung alle 30 Minuten
+setInterval(cleanupExpiredJobs, 30 * 60 * 1000);
 
 async function processImageWatermark(params) {
     const { jobId, sourcePath, outputPath, watermarkType, watermarkFile, textWatermark, params: options } = params;
     
     try {
         // Job-Status initialisieren
-        global.jobStatuses[jobId] = {
+        jobStatuses.set(jobId, {
             status: 'processing',
             progress: 0,
             startTime: Date.now(),
             message: 'Bildverarbeitung gestartet...'
-        };
+        });
 
         // Socket-Benachrichtigung senden
         const io = getSocketInstance();
@@ -54,13 +70,13 @@ async function processImageWatermark(params) {
         await processedImage.toFile(outputPath);
 
         // Erfolgreich abgeschlossen
-        global.jobStatuses[jobId] = {
+        jobStatuses.set(jobId, {
             status: 'completed',
             progress: 100,
             endTime: Date.now(),
             message: 'Bildverarbeitung erfolgreich abgeschlossen',
             outputFile: path.basename(outputPath)
-        };
+        });
 
         if (io) {
             io.emit('job-complete', {
@@ -73,13 +89,13 @@ async function processImageWatermark(params) {
     } catch (error) {
         console.error('Bildverarbeitungs-Fehler:', error);
         
-        global.jobStatuses[jobId] = {
+        jobStatuses.set(jobId, {
             status: 'error',
             progress: 0,
             endTime: Date.now(),
             message: 'Fehler bei der Bildverarbeitung',
             error: error.message
-        };
+        });
 
         if (getSocketInstance()) {
             getSocketInstance().emit('job-error', {
@@ -217,9 +233,11 @@ function getGravityFromPosition(position) {
 }
 
 function updateJobProgress(jobId, progress, message) {
-    if (global.jobStatuses[jobId]) {
-        global.jobStatuses[jobId].progress = progress;
-        global.jobStatuses[jobId].message = message;
+    const jobStatus = jobStatuses.get(jobId);
+    if (jobStatus) {
+        jobStatus.progress = progress;
+        jobStatus.message = message;
+        jobStatuses.set(jobId, jobStatus);
         
         const io = getSocketInstance();
         if (io) {
@@ -232,8 +250,14 @@ function updateJobProgress(jobId, progress, message) {
     }
 }
 
+// Funktion zum Abrufen des Job-Status
+function getJobStatus(jobId) {
+    return jobStatuses.get(jobId);
+}
+
 module.exports = {
     processImageWatermark,
     applyImageWatermark,
-    applyTextWatermark
+    applyTextWatermark,
+    getJobStatus
 }; 

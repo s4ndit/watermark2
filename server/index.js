@@ -14,7 +14,9 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: process.env.NODE_ENV === 'production' ? false : ["http://localhost:3000"],
+        origin: process.env.NODE_ENV === 'production' ? 
+            (process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ["https://yourdomain.com"]) : 
+            ["http://localhost:3000"],
         methods: ["GET", "POST"]
     }
 });
@@ -29,7 +31,9 @@ dirs.forEach(dir => {
 
 // Middleware
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' ? false : ["http://localhost:3000"],
+    origin: process.env.NODE_ENV === 'production' ? 
+        (process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ["https://yourdomain.com"]) : 
+        ["http://localhost:3000"],
     credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
