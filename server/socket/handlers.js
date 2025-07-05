@@ -1,3 +1,6 @@
+const { getJobStatus: getImageJobStatus } = require('../services/imageProcessor');
+const { getJobStatus: getVideoJobStatus } = require('../services/videoProcessor');
+
 let socketInstance = null;
 
 function initializeSocketHandlers(io) {
@@ -12,8 +15,39 @@ function initializeSocketHandlers(io) {
             socket.join(`job-${jobId}`);
             
             // Aktuellen Status senden, falls vorhanden
-            // Note: Job status is now handled internally by the processor services
-            // This will be handled by the individual services when they emit status updates
+            const currentStatus = getCurrentJobStatus(jobId);
+            if (currentStatus) {
+                // Send current status to the subscribing client
+                socket.emit('job-status', {
+                    jobId,
+                    ...currentStatus,
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Also send specific status event based on current state
+                if (currentStatus.status === 'processing') {
+                    socket.emit('job-progress', {
+                        jobId,
+                        progress: currentStatus.progress,
+                        message: currentStatus.message,
+                        timestamp: new Date().toISOString()
+                    });
+                } else if (currentStatus.status === 'completed') {
+                    socket.emit('job-complete', {
+                        jobId,
+                        outputFile: currentStatus.outputFile,
+                        message: currentStatus.message,
+                        timestamp: new Date().toISOString()
+                    });
+                } else if (currentStatus.status === 'error') {
+                    socket.emit('job-error', {
+                        jobId,
+                        error: currentStatus.error,
+                        message: currentStatus.message,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
         });
 
         // Job-Status abmelden
@@ -51,6 +85,23 @@ function initializeSocketHandlers(io) {
 
 function getSocketInstance() {
     return socketInstance;
+}
+
+// Helper function to get current job status from processor services
+function getCurrentJobStatus(jobId) {
+    // Check image processor first
+    let status = getImageJobStatus(jobId);
+    if (status) {
+        return status;
+    }
+    
+    // Check video processor if not found in image processor
+    status = getVideoJobStatus(jobId);
+    if (status) {
+        return status;
+    }
+    
+    return null;
 }
 
 function broadcastJobProgress(jobId, progress, message) {
