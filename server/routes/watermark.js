@@ -54,6 +54,8 @@ router.post('/process', async (req, res) => {
         res.json({
             success: true,
             jobId: jobId,
+            jobType: isImage ? 'image' : 'video',
+            fileType: isImage ? 'image' : 'video',
             message: 'Wasserzeichen-Verarbeitung gestartet',
             outputFile: outputFilename
         });
@@ -87,16 +89,37 @@ router.post('/process', async (req, res) => {
 // Job-Status abfragen
 router.get('/status/:jobId', (req, res) => {
     const jobId = req.params.jobId;
+    const jobType = req.query.type || null; // Optional job type parameter
     
-    // Hier würde normalerweise eine Datenbank oder ein Cache abgefragt werden
-    // Für diese Demo verwenden wir eine einfache In-Memory-Lösung
-    const jobStatus = global.jobStatuses?.[jobId] || { status: 'unknown' };
+    // Import the enhanced getCurrentJobStatus function
+    const { getCurrentJobStatus } = require('../socket/handlers');
     
-    res.json({
-        success: true,
-        jobId: jobId,
-        ...jobStatus
-    });
+    try {
+        const jobStatus = getCurrentJobStatus(jobId, jobType);
+        
+        if (jobStatus) {
+            res.json({
+                success: true,
+                jobId: jobId,
+                ...jobStatus
+            });
+        } else {
+            res.json({
+                success: false,
+                jobId: jobId,
+                status: 'not_found',
+                message: 'Job nicht gefunden'
+            });
+        }
+    } catch (error) {
+        console.error('Job-Status-Fehler:', error);
+        res.status(500).json({
+            success: false,
+            jobId: jobId,
+            error: 'Fehler beim Abrufen des Job-Status',
+            message: error.message
+        });
+    }
 });
 
 // Vorschau generieren

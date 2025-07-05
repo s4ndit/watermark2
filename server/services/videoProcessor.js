@@ -1,7 +1,7 @@
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs-extra');
-const { getSocketInstance } = require('../socket/handlers');
+const { broadcastJobProgress, broadcastJobComplete, broadcastJobError } = require('../socket/handlers');
 
 // Job-Status-Speicher mit automatischer Bereinigung
 const jobStatuses = new Map();
@@ -35,14 +35,7 @@ async function processVideoWatermark(params) {
         });
 
         // Socket-Benachrichtigung senden
-        const io = getSocketInstance();
-        if (io) {
-            io.emit('job-progress', {
-                jobId,
-                progress: 0,
-                message: 'Videobearbeitung gestartet...'
-            });
-        }
+        broadcastJobProgress(jobId, 0, 'Videobearbeitung gestartet...', 'video');
 
         // FFmpeg-Befehl erstellen
         const command = ffmpeg(sourcePath);
@@ -119,13 +112,7 @@ async function processVideoWatermark(params) {
                 error: error.message
             });
 
-            if (getSocketInstance()) {
-                getSocketInstance().emit('job-error', {
-                    jobId,
-                    message: 'Fehler bei der Videobearbeitung',
-                    error: error.message
-                });
-            }
+            broadcastJobError(jobId, error.message, 'Fehler bei der Videobearbeitung', 'video');
         });
 
         // Erfolgreiches Ende
@@ -138,13 +125,7 @@ async function processVideoWatermark(params) {
                 outputFile: path.basename(outputPath)
             });
 
-            if (getSocketInstance()) {
-                getSocketInstance().emit('job-complete', {
-                    jobId,
-                    message: 'Videobearbeitung erfolgreich abgeschlossen',
-                    outputFile: path.basename(outputPath)
-                });
-            }
+            broadcastJobComplete(jobId, path.basename(outputPath), 'Videobearbeitung erfolgreich abgeschlossen', 'video');
         });
 
         // Verarbeitung starten
@@ -161,13 +142,7 @@ async function processVideoWatermark(params) {
             error: error.message
         });
 
-        if (getSocketInstance()) {
-            getSocketInstance().emit('job-error', {
-                jobId,
-                message: 'Fehler bei der Videobearbeitung',
-                error: error.message
-            });
-        }
+        broadcastJobError(jobId, error.message, 'Fehler bei der Videobearbeitung', 'video');
     }
 }
 
@@ -260,14 +235,7 @@ function updateJobProgress(jobId, progress, message) {
         jobStatus.message = message;
         jobStatuses.set(jobId, jobStatus);
         
-        const io = getSocketInstance();
-        if (io) {
-            io.emit('job-progress', {
-                jobId,
-                progress,
-                message
-            });
-        }
+        broadcastJobProgress(jobId, progress, message, 'video');
     }
 }
 

@@ -2,7 +2,7 @@ const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
-const { getSocketInstance } = require('../socket/handlers');
+const { broadcastJobProgress, broadcastJobComplete, broadcastJobError } = require('../socket/handlers');
 
 // Job-Status-Speicher mit automatischer Bereinigung
 const jobStatuses = new Map();
@@ -36,14 +36,7 @@ async function processImageWatermark(params) {
         });
 
         // Socket-Benachrichtigung senden
-        const io = getSocketInstance();
-        if (io) {
-            io.emit('job-progress', {
-                jobId,
-                progress: 0,
-                message: 'Bildverarbeitung gestartet...'
-            });
-        }
+        broadcastJobProgress(jobId, 0, 'Bildverarbeitung gestartet...', 'image');
 
         let processedImage = sharp(sourcePath);
 
@@ -78,13 +71,7 @@ async function processImageWatermark(params) {
             outputFile: path.basename(outputPath)
         });
 
-        if (io) {
-            io.emit('job-complete', {
-                jobId,
-                message: 'Bildverarbeitung erfolgreich abgeschlossen',
-                outputFile: path.basename(outputPath)
-            });
-        }
+        broadcastJobComplete(jobId, path.basename(outputPath), 'Bildverarbeitung erfolgreich abgeschlossen', 'image');
 
     } catch (error) {
         console.error('Bildverarbeitungs-Fehler:', error);
@@ -97,13 +84,7 @@ async function processImageWatermark(params) {
             error: error.message
         });
 
-        if (getSocketInstance()) {
-            getSocketInstance().emit('job-error', {
-                jobId,
-                message: 'Fehler bei der Bildverarbeitung',
-                error: error.message
-            });
-        }
+        broadcastJobError(jobId, error.message, 'Fehler bei der Bildverarbeitung', 'image');
     }
 }
 
@@ -239,14 +220,7 @@ function updateJobProgress(jobId, progress, message) {
         jobStatus.message = message;
         jobStatuses.set(jobId, jobStatus);
         
-        const io = getSocketInstance();
-        if (io) {
-            io.emit('job-progress', {
-                jobId,
-                progress,
-                message
-            });
-        }
+        broadcastJobProgress(jobId, progress, message, 'image');
     }
 }
 
