@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  wasserzeichen-app:
+    build: .
+    ports:
+      - "3000:3001"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./processed:/app/processed
+      - ./temp:/app/temp
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - UPLOAD_DIR=/app/uploads
+      - TEMP_DIR=/app/temp
+      - PROCESSED_DIR=/app/processed
+      - MAX_FILE_SIZE=100MB
+      - FFMPEG_PATH=/usr/bin/ffmpeg
+      - MAGICK_PATH=/usr/bin/magick
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - wasserzeichen-app
+    restart: unless-stopped 
