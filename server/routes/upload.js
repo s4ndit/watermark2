@@ -141,7 +141,19 @@ router.post('/watermark', upload.single('watermark'), async (req, res) => {
 router.get('/info/:filename', async (req, res) => {
     try {
         const filename = req.params.filename;
-        const filePath = path.join(__dirname, '..', '..', 'uploads', filename);
+        
+        // Validate filename to prevent path traversal
+        if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+            return res.status(400).json({ error: 'Ungültiger Dateiname' });
+        }
+        
+        const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
+        const filePath = path.join(uploadsDir, filename);
+        
+        // Ensure the resolved path is within the uploads directory
+        if (!filePath.startsWith(uploadsDir)) {
+            return res.status(400).json({ error: 'Pfad außerhalb des Upload-Verzeichnisses nicht erlaubt' });
+        }
 
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({ error: 'Datei nicht gefunden' });
@@ -170,7 +182,19 @@ router.get('/info/:filename', async (req, res) => {
 router.delete('/:filename', async (req, res) => {
     try {
         const filename = req.params.filename;
-        const filePath = path.join(__dirname, '..', '..', 'uploads', filename);
+        
+        // Validate filename to prevent path traversal
+        if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+            return res.status(400).json({ error: 'Ungültiger Dateiname' });
+        }
+        
+        const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
+        const filePath = path.join(uploadsDir, filename);
+        
+        // Ensure the resolved path is within the uploads directory
+        if (!filePath.startsWith(uploadsDir)) {
+            return res.status(400).json({ error: 'Pfad außerhalb des Upload-Verzeichnisses nicht erlaubt' });
+        }
 
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({ error: 'Datei nicht gefunden' });

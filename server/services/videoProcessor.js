@@ -3,20 +3,36 @@ const path = require('path');
 const fs = require('fs-extra');
 const { getSocketInstance } = require('../socket/handlers');
 
-// Globale Job-Status-Speicher
-global.jobStatuses = global.jobStatuses || {};
+// Job-Status-Speicher mit automatischer Bereinigung
+const jobStatuses = new Map();
+
+// Aufräumfunktion für abgelaufene Jobs
+function cleanupExpiredJobs() {
+    const now = Date.now();
+    const maxAge = 2 * 60 * 60 * 1000; // 2 Stunden
+    
+    for (const [jobId, job] of jobStatuses.entries()) {
+        const jobTime = job.endTime || job.startTime || now;
+        if (now - jobTime > maxAge) {
+            jobStatuses.delete(jobId);
+        }
+    }
+}
+
+// Periodische Bereinigung alle 30 Minuten
+setInterval(cleanupExpiredJobs, 30 * 60 * 1000);
 
 async function processVideoWatermark(params) {
     const { jobId, sourcePath, outputPath, watermarkType, watermarkFile, textWatermark, params: options } = params;
     
     try {
         // Job-Status initialisieren
-        global.jobStatuses[jobId] = {
+        jobStatuses.set(jobId, {
             status: 'processing',
             progress: 0,
             startTime: Date.now(),
             message: 'Videobearbeitung gestartet...'
-        };
+        });
 
         // Socket-Benachrichtigung senden
         const io = getSocketInstance();
@@ -95,13 +111,13 @@ async function processVideoWatermark(params) {
         command.on('error', (error) => {
             console.error('FFmpeg-Fehler:', error);
             
-            global.jobStatuses[jobId] = {
+            jobStatuses.set(jobId, {
                 status: 'error',
                 progress: 0,
                 endTime: Date.now(),
                 message: 'Fehler bei der Videobearbeitung',
                 error: error.message
-            };
+            });
 
             if (getSocketInstance()) {
                 getSocketInstance().emit('job-error', {
@@ -114,13 +130,13 @@ async function processVideoWatermark(params) {
 
         // Erfolgreiches Ende
         command.on('end', () => {
-            global.jobStatuses[jobId] = {
+            jobStatuses.set(jobId, {
                 status: 'completed',
                 progress: 100,
                 endTime: Date.now(),
                 message: 'Videobearbeitung erfolgreich abgeschlossen',
                 outputFile: path.basename(outputPath)
-            };
+            });
 
             if (getSocketInstance()) {
                 getSocketInstance().emit('job-complete', {
@@ -137,13 +153,13 @@ async function processVideoWatermark(params) {
     } catch (error) {
         console.error('Videobearbeitungs-Fehler:', error);
         
-        global.jobStatuses[jobId] = {
+        jobStatuses.set(jobId, {
             status: 'error',
             progress: 0,
             endTime: Date.now(),
             message: 'Fehler bei der Videobearbeitung',
             error: error.message
-        };
+        });
 
         if (getSocketInstance()) {
             getSocketInstance().emit('job-error', {
@@ -238,9 +254,11 @@ function getTextPosition(position, margin) {
 }
 
 function updateJobProgress(jobId, progress, message) {
-    if (global.jobStatuses[jobId]) {
-        global.jobStatuses[jobId].progress = progress;
-        global.jobStatuses[jobId].message = message;
+    const jobStatus = jobStatuses.get(jobId);
+    if (jobStatus) {
+        jobStatus.progress = progress;
+        jobStatus.message = message;
+        jobStatuses.set(jobId, jobStatus);
         
         const io = getSocketInstance();
         if (io) {
@@ -253,8 +271,14 @@ function updateJobProgress(jobId, progress, message) {
     }
 }
 
+// Funktion zum Abrufen des Job-Status
+function getJobStatus(jobId) {
+    return jobStatuses.get(jobId);
+}
+
 module.exports = {
     processVideoWatermark,
     createImageWatermarkFilter,
-    createTextWatermarkFilter
+    createTextWatermarkFilter,
+    getJobStatus
 }; 
