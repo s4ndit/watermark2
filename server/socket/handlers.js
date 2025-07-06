@@ -2,6 +2,10 @@ const { getJobStatus: getImageJobStatus } = require('../services/imageProcessor'
 const { getJobStatus: getVideoJobStatus } = require('../services/videoProcessor');
 const { initializeBroadcaster, getSocketInstance } = require('../services/socketBroadcaster');
 
+// Track intervals to prevent multiple concurrent timers
+let cleanupInterval = null;
+let systemStatsInterval = null;
+
 function initializeSocketHandlers(io) {
     // Initialize the broadcaster with the socket instance
     initializeBroadcaster(io);
@@ -102,13 +106,21 @@ function initializeSocketHandlers(io) {
         });
     });
 
+    // Clear any existing intervals to prevent multiple concurrent timers
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+    }
+    if (systemStatsInterval) {
+        clearInterval(systemStatsInterval);
+    }
+
     // Periodische Aufräumarbeiten
-    setInterval(() => {
+    cleanupInterval = setInterval(() => {
         cleanupOldJobs();
     }, 60000); // Alle 60 Sekunden
 
     // Periodische System-Statistiken - now started after socket initialization
-    setInterval(broadcastSystemStats, 30000); // Alle 30 Sekunden
+    systemStatsInterval = setInterval(broadcastSystemStats, 30000); // Alle 30 Sekunden
 
     console.log('⚡ Socket.io-Handler initialisiert');
 }
@@ -179,9 +191,23 @@ function broadcastSystemStats() {
     }
 }
 
+// Function to clean up all intervals
+function cleanupIntervals() {
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+        cleanupInterval = null;
+    }
+    if (systemStatsInterval) {
+        clearInterval(systemStatsInterval);
+        systemStatsInterval = null;
+    }
+    console.log('🧹 Socket handler intervals cleaned up');
+}
+
 module.exports = {
     initializeSocketHandlers,
     getSocketInstance,
     getCurrentJobStatus,
-    cleanupOldJobs
+    cleanupOldJobs,
+    cleanupIntervals
 }; 
