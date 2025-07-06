@@ -169,9 +169,10 @@ dist
 
 # Gatsby files
 .cache/
-# public (commented out to allow React client/public directory)
-# Only ignore specific public directories if needed
+# public - commented out to allow client/public for React app
+# Use specific paths if you need to ignore other public directories:
 # /public
+# docs/public
 
 # Storybook build outputs
 .out
