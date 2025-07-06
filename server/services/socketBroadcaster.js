@@ -59,9 +59,6 @@ function broadcastSystemStats() {
     }
 }
 
-// Periodische System-Statistiken
-setInterval(broadcastSystemStats, 30000); // Alle 30 Sekunden
-
 module.exports = {
     initializeBroadcaster,
     getSocketInstance,
