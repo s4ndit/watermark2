@@ -51,47 +51,13 @@ async function processVideoWatermark(params) {
                 '-crf', '23'
             ]);
 
-        // Filter für Wasserzeichen erstellen
-        const filters = [];
-
-        // Bildwasserzeichen
+        // Wasserzeichen-Filter anwenden
         if (watermarkType === 'image' && watermarkFile) {
-            const watermarkPath = path.join(__dirname, '..', '..', 'uploads', watermarkFile);
-            
-            if (!fs.existsSync(watermarkPath)) {
-                throw new Error('Wasserzeichen-Datei nicht gefunden');
-            }
-
-            command.input(watermarkPath);
-            
-            const imageFilter = createImageWatermarkFilter(options);
-            filters.push(imageFilter);
-        }
-
-        // Textwasserzeichen
-        if (watermarkType === 'text' && textWatermark) {
-            const textFilter = createTextWatermarkFilter(textWatermark, options);
-            filters.push(textFilter);
-        }
-
-        // Beide Wasserzeichen
-        if (watermarkType === 'both' && watermarkFile && textWatermark) {
-            const watermarkPath = path.join(__dirname, '..', '..', 'uploads', watermarkFile);
-            
-            if (!fs.existsSync(watermarkPath)) {
-                throw new Error('Wasserzeichen-Datei nicht gefunden');
-            }
-
-            command.input(watermarkPath);
-            
-            const imageFilter = createImageWatermarkFilter(options);
-            const textFilter = createTextWatermarkFilter(textWatermark, options);
-            filters.push(imageFilter, textFilter);
-        }
-
-        // Filter anwenden
-        if (filters.length > 0) {
-            command.complexFilter(filters);
+            await addImageWatermark(command, watermarkFile, options);
+        } else if (watermarkType === 'text' && textWatermark) {
+            await addTextWatermark(command, textWatermark, options);
+        } else if (watermarkType === 'both' && watermarkFile && textWatermark) {
+            await addBothWatermarks(command, watermarkFile, textWatermark, options);
         }
 
         // Fortschritt-Tracking
@@ -146,7 +112,16 @@ async function processVideoWatermark(params) {
     }
 }
 
-function createImageWatermarkFilter(options) {
+async function addImageWatermark(command, watermarkFile, options) {
+    const watermarkPath = path.join(__dirname, '..', '..', 'uploads', watermarkFile);
+    
+    if (!fs.existsSync(watermarkPath)) {
+        throw new Error('Wasserzeichen-Datei nicht gefunden');
+    }
+
+    // Wasserzeichen-Datei als Input hinzufügen
+    command.input(watermarkPath);
+    
     const {
         position = 'bottom-right',
         size = 20,
@@ -154,49 +129,66 @@ function createImageWatermarkFilter(options) {
         margin = 10
     } = options;
 
-    // Wasserzeichen skalieren
-    const scaleFilter = `[1:v]scale=iw*${size/100}:ih*${size/100}[watermark]`;
+    // Einfacher Overlay-Filter ohne complexFilter
+    const overlayPosition = getSimpleOverlayPosition(position, margin);
+    const scaleSize = size / 100;
     
-    // Position berechnen
-    const overlay = getOverlayPosition(position, margin);
+    // Video-Filter mit einfacher Syntax
+    const filterString = `[1:v]scale=iw*${scaleSize}:ih*${scaleSize}:force_original_aspect_ratio=decrease[scaled];[0:v][scaled]overlay=${overlayPosition}:format=auto,format=yuv420p[v]`;
     
-    // Transparenz anwenden
-    const alphaFilter = opacity < 1 ? `[watermark]format=yuva420p,colorchannelmixer=aa=${opacity}[watermark_alpha]` : '';
-    const overlayInput = alphaFilter ? '[watermark_alpha]' : '[watermark]';
-    
-    const overlayFilter = `[0:v]${overlayInput}overlay=${overlay}`;
-    
-    return alphaFilter ? 
-        [scaleFilter, alphaFilter, overlayFilter] :
-        [scaleFilter, overlayFilter];
+    command.complexFilter(filterString);
+    command.outputOptions(['-map', '[v]', '-map', '0:a?']);
 }
 
-function createTextWatermarkFilter(text, options) {
+async function addTextWatermark(command, textWatermark, options) {
     const {
         fontSize = 24,
         fontColor = 'white',
         position = 'bottom-right',
         opacity = 0.8,
-        rotation = 0,
-        fontFamily = 'Arial',
         margin = 10
     } = options;
 
     // Position berechnen
     const textPosition = getTextPosition(position, margin);
     
-    // Text-Filter erstellen
-    const textFilter = `drawtext=text='${text}':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:fontsize=${fontSize}:fontcolor=${fontColor}@${opacity}:${textPosition}`;
+    // Einfacher drawtext-Filter
+    const filterString = `drawtext=text='${textWatermark}':fontsize=${fontSize}:fontcolor=${fontColor}@${opacity}:${textPosition}`;
     
-    // Rotation hinzufügen
-    if (rotation && rotation !== 0) {
-        return `${textFilter}:angle=${rotation}*PI/180`;
-    }
-    
-    return textFilter;
+    command.videoFilters(filterString);
 }
 
-function getOverlayPosition(position, margin) {
+async function addBothWatermarks(command, watermarkFile, textWatermark, options) {
+    const watermarkPath = path.join(__dirname, '..', '..', 'uploads', watermarkFile);
+    
+    if (!fs.existsSync(watermarkPath)) {
+        throw new Error('Wasserzeichen-Datei nicht gefunden');
+    }
+
+    // Wasserzeichen-Datei als Input hinzufügen
+    command.input(watermarkPath);
+    
+    const {
+        position = 'bottom-right',
+        size = 20,
+        opacity = 0.8,
+        fontSize = 24,
+        fontColor = 'white',
+        margin = 10
+    } = options;
+
+    // Einfacher kombinierter Filter
+    const overlayPosition = getSimpleOverlayPosition(position, margin);
+    const textPosition = getTextPosition(position, margin);
+    const scaleSize = size / 100;
+    
+    const filterString = `[1:v]scale=iw*${scaleSize}:ih*${scaleSize}:force_original_aspect_ratio=decrease[scaled];[0:v][scaled]overlay=${overlayPosition}:format=auto[watermarked];[watermarked]drawtext=text='${textWatermark}':fontsize=${fontSize}:fontcolor=${fontColor}@${opacity}:${textPosition}[v]`;
+    
+    command.complexFilter(filterString);
+    command.outputOptions(['-map', '[v]', '-map', '0:a?']);
+}
+
+function getSimpleOverlayPosition(position, margin) {
     const positions = {
         'top-left': `${margin}:${margin}`,
         'top-center': `(W-w)/2:${margin}`,
@@ -229,24 +221,21 @@ function getTextPosition(position, margin) {
 }
 
 function updateJobProgress(jobId, progress, message) {
-    const jobStatus = jobStatuses.get(jobId);
-    if (jobStatus) {
-        jobStatus.progress = progress;
-        jobStatus.message = message;
-        jobStatuses.set(jobId, jobStatus);
-        
-        broadcastJobProgress(jobId, progress, message, 'video');
+    const job = jobStatuses.get(jobId);
+    if (job) {
+        job.progress = progress;
+        job.message = message;
+        jobStatuses.set(jobId, job);
     }
+    
+    broadcastJobProgress(jobId, progress, message, 'video');
 }
 
-// Funktion zum Abrufen des Job-Status
 function getJobStatus(jobId) {
-    return jobStatuses.get(jobId);
+    return jobStatuses.get(jobId) || { status: 'unknown', progress: 0, message: 'Job nicht gefunden' };
 }
 
 module.exports = {
     processVideoWatermark,
-    createImageWatermarkFilter,
-    createTextWatermarkFilter,
     getJobStatus
 }; 

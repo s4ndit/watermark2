@@ -98,41 +98,55 @@ async function applyImageWatermark(image, watermarkFile, options, jobId) {
             throw new Error('Wasserzeichen-Datei nicht gefunden');
         }
 
-        // Wasserzeichen-Bild laden und skalieren
-        let watermark = sharp(watermarkPath);
+        // Bild-Metadaten abrufen
+        const imageMetadata = await image.metadata();
+        const { width: sourceWidth, height: sourceHeight } = imageMetadata;
         
-        // Größe anpassen basierend auf Parametern
-        if (options.size) {
-            const sizePercent = parseFloat(options.size) / 100;
-            const { width: sourceWidth, height: sourceHeight } = await image.metadata();
-            const targetWidth = Math.round(sourceWidth * sizePercent);
-            
-            watermark = watermark.resize(targetWidth, null, {
-                fit: 'inside',
-                withoutEnlargement: true
-            });
-        }
+        // Wasserzeichen-Bild laden
+        let watermark = sharp(watermarkPath);
+        const watermarkMetadata = await watermark.metadata();
+        
+        // Wasserzeichen skalieren basierend auf Parametern
+        const sizePercent = parseFloat(options.size || 20) / 100;
+        const maxWidth = Math.round(sourceWidth * sizePercent);
+        const maxHeight = Math.round(sourceHeight * sizePercent);
+        
+        // Wasserzeichen auf maximale Größe begrenzen
+        watermark = watermark.resize(maxWidth, maxHeight, {
+            fit: 'inside',
+            withoutEnlargement: true
+        });
 
-        // Transparenz anwenden
+        // Transparenz anwenden (mit Alpha-Kanal)
         if (options.opacity && options.opacity < 1) {
-            watermark = watermark.modulate({ 
-                saturation: 1, 
-                brightness: options.opacity 
-            });
+            const opacityValue = Math.round(parseFloat(options.opacity) * 255);
+            watermark = watermark.ensureAlpha().modulate({
+                brightness: 1,
+                saturation: 1,
+                hue: 0
+            }).composite([{
+                input: Buffer.from([255, 255, 255, opacityValue]),
+                raw: { width: 1, height: 1, channels: 4 },
+                tile: true,
+                blend: 'dest-in'
+            }]);
         }
 
         // Rotation anwenden
         if (options.rotation && options.rotation !== 0) {
-            watermark = watermark.rotate(parseFloat(options.rotation));
+            watermark = watermark.rotate(parseFloat(options.rotation), {
+                background: { r: 0, g: 0, b: 0, alpha: 0 }
+            });
         }
 
         // Position berechnen
-        const gravity = getGravityFromPosition(options.position);
+        const position = calculatePosition(options.position, sourceWidth, sourceHeight, maxWidth, maxHeight, options.margin);
         
         // Wasserzeichen zusammenfügen
         image.composite([{
             input: await watermark.toBuffer(),
-            gravity: gravity,
+            top: position.top,
+            left: position.left,
             blend: 'over'
         }]);
 
@@ -147,16 +161,21 @@ async function applyTextWatermark(image, textWatermark, options, jobId) {
     try {
         updateJobProgress(jobId, 60, 'Textwasserzeichen wird angewendet...');
 
+        // Bild-Metadaten abrufen
+        const imageMetadata = await image.metadata();
+        const { width: sourceWidth, height: sourceHeight } = imageMetadata;
+
         // Text-Wasserzeichen mit SVG erstellen
-        const textSvg = createTextSvg(textWatermark, options);
+        const textSvg = createTextSvg(textWatermark, options, sourceWidth, sourceHeight);
         
         // Position berechnen
-        const gravity = getGravityFromPosition(options.position);
+        const position = calculateTextPosition(options.position, sourceWidth, sourceHeight, options.margin);
         
         // Text-Wasserzeichen zusammenfügen
         image.composite([{
             input: Buffer.from(textSvg),
-            gravity: gravity,
+            top: position.top,
+            left: position.left,
             blend: 'over'
         }]);
 
@@ -167,7 +186,7 @@ async function applyTextWatermark(image, textWatermark, options, jobId) {
     }
 }
 
-function createTextSvg(text, options) {
+function createTextSvg(text, options, sourceWidth, sourceHeight) {
     const {
         fontSize = 24,
         fontColor = '#ffffff',
@@ -176,10 +195,17 @@ function createTextSvg(text, options) {
         fontFamily = 'Arial'
     } = options;
 
-    const rotationTransform = rotation ? `rotate(${rotation})` : '';
+    const rotationTransform = rotation ? `rotate(${rotation} 50 50)` : '';
+    
+    // Berechne die SVG-Größe basierend auf der Schriftgröße
+    const estimatedWidth = text.length * fontSize * 0.6;
+    const estimatedHeight = fontSize * 1.2;
+    
+    const svgWidth = Math.min(estimatedWidth, sourceWidth * 0.8);
+    const svgHeight = Math.min(estimatedHeight, sourceHeight * 0.2);
     
     return `
-        <svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+        <svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
             <text
                 x="50%"
                 y="50%"
@@ -197,8 +223,40 @@ function createTextSvg(text, options) {
     `;
 }
 
-function getGravityFromPosition(position) {
+function calculatePosition(position, sourceWidth, sourceHeight, watermarkWidth, watermarkHeight, margin = 10) {
     const positions = {
+        'top-left': { top: margin, left: margin },
+        'top-center': { top: margin, left: Math.round((sourceWidth - watermarkWidth) / 2) },
+        'top-right': { top: margin, left: sourceWidth - watermarkWidth - margin },
+        'center-left': { top: Math.round((sourceHeight - watermarkHeight) / 2), left: margin },
+        'center': { top: Math.round((sourceHeight - watermarkHeight) / 2), left: Math.round((sourceWidth - watermarkWidth) / 2) },
+        'center-right': { top: Math.round((sourceHeight - watermarkHeight) / 2), left: sourceWidth - watermarkWidth - margin },
+        'bottom-left': { top: sourceHeight - watermarkHeight - margin, left: margin },
+        'bottom-center': { top: sourceHeight - watermarkHeight - margin, left: Math.round((sourceWidth - watermarkWidth) / 2) },
+        'bottom-right': { top: sourceHeight - watermarkHeight - margin, left: sourceWidth - watermarkWidth - margin }
+    };
+    
+    return positions[position] || positions['bottom-right'];
+}
+
+function calculateTextPosition(position, sourceWidth, sourceHeight, margin = 10) {
+    const positions = {
+        'top-left': { top: margin, left: margin },
+        'top-center': { top: margin, left: Math.round(sourceWidth * 0.1) },
+        'top-right': { top: margin, left: Math.round(sourceWidth * 0.8) },
+        'center-left': { top: Math.round(sourceHeight * 0.4), left: margin },
+        'center': { top: Math.round(sourceHeight * 0.4), left: Math.round(sourceWidth * 0.1) },
+        'center-right': { top: Math.round(sourceHeight * 0.4), left: Math.round(sourceWidth * 0.8) },
+        'bottom-left': { top: sourceHeight - 80 - margin, left: margin },
+        'bottom-center': { top: sourceHeight - 80 - margin, left: Math.round(sourceWidth * 0.1) },
+        'bottom-right': { top: sourceHeight - 80 - margin, left: Math.round(sourceWidth * 0.8) }
+    };
+    
+    return positions[position] || positions['bottom-right'];
+}
+
+function getGravityFromPosition(position) {
+    const gravities = {
         'top-left': 'northwest',
         'top-center': 'north',
         'top-right': 'northeast',
@@ -210,7 +268,7 @@ function getGravityFromPosition(position) {
         'bottom-right': 'southeast'
     };
     
-    return positions[position] || 'center';
+    return gravities[position] || 'southeast';
 }
 
 function updateJobProgress(jobId, progress, message) {

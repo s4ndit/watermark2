@@ -9,6 +9,7 @@ require('dotenv').config();
 const uploadRoutes = require('./routes/upload');
 const watermarkRoutes = require('./routes/watermark');
 const { initializeSocketHandlers } = require('./socket/handlers');
+const { checkSystemRequirements } = require('./utils/systemCheck');
 
 const app = express();
 const server = http.createServer(app);
@@ -61,6 +62,24 @@ app.get('/health', (req, res) => {
     });
 });
 
+// System-Status
+app.get('/api/system-status', async (req, res) => {
+    try {
+        const systemStatus = await checkSystemRequirements();
+        res.json({
+            status: 'OK',
+            timestamp: new Date().toISOString(),
+            systemRequirements: systemStatus
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'ERROR',
+            message: 'Fehler beim Überprüfen der System-Anforderungen',
+            error: error.message
+        });
+    }
+});
+
 // Socket.io-Handler initialisieren
 initializeSocketHandlers(io);
 
@@ -89,8 +108,11 @@ process.on('SIGINT', () => {
     });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
     console.log(`🚀 Server läuft auf Port ${PORT}`);
     console.log(`📁 Upload-Verzeichnis: ${path.join(__dirname, '..', 'uploads')}`);
     console.log(`⚡ WebSocket-Server bereit für Echtzeitkommunikation`);
+    
+    // System-Anforderungen überprüfen
+    await checkSystemRequirements();
 }); 
