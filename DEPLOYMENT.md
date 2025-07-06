@@ -84,7 +84,7 @@ sudo usermod -aG docker $USER
 
 ```bash
 cd /opt
-sudo git clone <your-repository-url> wasserzeichen-webapp
+sudo git clone https://github.com/s4ndit/watermark2.git wasserzeichen-webapp
 sudo chown -R $USER:$USER wasserzeichen-webapp
 cd wasserzeichen-webapp
 ```
@@ -133,7 +133,7 @@ docker-compose logs -f
 
 ```bash
 cd /opt
-sudo git clone <your-repository-url> wasserzeichen-webapp
+sudo git clone https://github.com/s4ndit/watermark2.git wasserzeichen-webapp
 sudo chown -R $USER:$USER wasserzeichen-webapp
 cd wasserzeichen-webapp
 

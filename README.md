@@ -22,7 +22,7 @@ Eine moderne, professionelle Webapp zum Hinzufügen von Wasserzeichen zu Bildern
 
 ```bash
 # Repository klonen
-git clone <repository-url>
+git clone https://github.com/s4ndit/watermark2.git
 cd watermark2
 
 # Mit Docker Compose starten
@@ -52,7 +52,7 @@ sudo apt update
 sudo apt install -y ffmpeg imagemagick imagemagick-dev python3 build-essential
 
 # Repository klonen
-git clone <repository-url>
+git clone https://github.com/s4ndit/watermark2.git
 cd watermark2
 
 # Abhängigkeiten installieren
