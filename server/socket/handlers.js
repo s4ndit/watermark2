@@ -1,6 +1,6 @@
 const { getJobStatus: getImageJobStatus } = require('../services/imageProcessor');
 const { getJobStatus: getVideoJobStatus } = require('../services/videoProcessor');
-const { initializeBroadcaster, getSocketInstance } = require('../services/socketBroadcaster');
+const { initializeBroadcaster, getSocketInstance, broadcastSystemStats } = require('../services/socketBroadcaster');
 
 // Track intervals to prevent multiple concurrent timers
 let cleanupInterval = null;
@@ -174,21 +174,6 @@ function cleanupOldJobs() {
     // Job cleanup is now handled internally by the processor services
     // This function remains for backward compatibility but is no longer needed
     console.log('🧹 Job cleanup is now handled by individual processor services');
-}
-
-// System-Statistiken senden
-function broadcastSystemStats() {
-    const socketInstance = getSocketInstance();
-    if (socketInstance) {
-        const stats = {
-            uptime: process.uptime(),
-            memoryUsage: process.memoryUsage(),
-            activeJobs: 0, // Active jobs are now tracked internally by processor services
-            timestamp: new Date().toISOString()
-        };
-        
-        socketInstance.emit('system-stats', stats);
-    }
 }
 
 // Function to clean up all intervals
